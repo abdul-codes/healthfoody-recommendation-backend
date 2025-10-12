@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 class HealthConditionRequest(BaseModel):
@@ -9,12 +8,12 @@ class HealthConditionRequest(BaseModel):
 class FoodItem(BaseModel):
     name: str
     reason: str
-    calories: Optional[float] = None
-    protein: Optional[float] = None
-    carbohydrates: Optional[float] = None
-    fat: Optional[float] = None
-    sugar: Optional[float] = None
-    sodium: Optional[float] = None
+    calories: float | None = None
+    protein: float | None = None
+    carbohydrates: float | None = None
+    fat: float | None = None
+    sugar: float | None = None
+    sodium: float | None = None
 
 
 class DietaryPrinciple(BaseModel):
@@ -23,6 +22,6 @@ class DietaryPrinciple(BaseModel):
 
 
 class FoodRecommendationResponse(BaseModel):
-    recommended_foods: List[FoodItem]
-    foods_to_avoid: List[FoodItem]
-    dietary_principles: List[DietaryPrinciple]
+    recommended_foods: list[FoodItem]
+    foods_to_avoid: list[FoodItem]
+    dietary_principles: list[DietaryPrinciple]

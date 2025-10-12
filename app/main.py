@@ -3,13 +3,23 @@ from app.models import HealthConditionRequest, FoodRecommendationResponse
 from app.services import get_recommendations
 from dotenv import load_dotenv
 import os
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv() 
+
 
 app = FastAPI(
     title="Healthy Food Recommender API",
     description="An AI-powered API to recommend healthy foods for various health conditions.",
     version="1.0.0",
+)
+ # Add CORS middleware to allow frontend requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React/Vite dev servers
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
