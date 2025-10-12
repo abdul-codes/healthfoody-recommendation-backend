@@ -8,6 +8,7 @@ import re
 from app.config import USDA_API_KEY, GEMINI_API_KEY
 from app.types import GeminiResponse, NutrientData
 from collections.abc import Mapping
+from async_lru import alru_cache
 
 HTTP_CLIENT = httpx.AsyncClient(
     timeout=httpx.Timeout(15.0),
@@ -23,9 +24,11 @@ def clean_json_response(text: str) -> str:
     return text.strip()  # Fallback
 
 
+@alru_cache(maxsize=128)
 async def get_gemini_recommendations(condition: str) -> GeminiResponse:
     """
     Queries the Gemini API asynchronously for food recommendations.
+    Results are cached to avoid repeated API calls for the same condition.
     """
     prompt = f"""
     As a nutritionist, for a person with '{condition}', provide a list of 4 recommended foods and 4 foods to strictly avoid.
@@ -93,12 +96,13 @@ def _extract_nutrient_value(nutrient_data: dict[str, Any]) -> float | None:
         return None
 
 
+@alru_cache(maxsize=256)
 async def get_usda_nutrition_data(food_name: str) -> NutrientData:
     """
     Queries the USDA FoodData Central API asynchronously for nutritional data.
-    This is a two-step process: first search for the food's FDC ID, then get the data.
+    This is optimized to a one-step process by parsing data from the search result.
+    Results are cached to avoid repeated API calls for the same food.
     """
-    # Step 1: Search for the food to get its FDC ID
     search_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
     search_params = {"query": food_name, "api_key": USDA_API_KEY, "pageSize": 1}
 
@@ -108,27 +112,12 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
         search_data = search_response.json()
 
         if not search_data.get("foods"):
-            return {
-                "calories": None,
-                "protein": None,
-                "carbohydrates": None,
-                "fat": None,
-                "sugar": None,
-                "sodium": None,
-            }
+            return _create_default_nutrients()
 
-        fdc_id = search_data["foods"][0]["fdcId"]
-
-        # Step 2: Retrieve the food report using the FDC ID
-        report_url = f"https://api.nal.usda.gov/fdc/v1/food/{fdc_id}"
-        report_params = {"api_key": USDA_API_KEY}
-        report_response = await HTTP_CLIENT.get(report_url, params=report_params)
-        report_response.raise_for_status()
-        report_data = report_response.json()
-
+        # The search result itself contains the nutrient data. No need for a second call.
+        food_details = search_data["foods"][0]
         nutrients = _create_default_nutrients()
 
-        # Nutrient names and their corresponding keys in our model
         nutrient_map: Mapping[str, str] = {
             "Energy": "calories",
             "Protein": "protein",
@@ -138,34 +127,21 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
             "Sodium, Na": "sodium",
         }
 
-        for nutrient in report_data.get("foodNutrients", []):
-            nutrient_name = nutrient.get("nutrient", {}).get("name")
+        for nutrient in food_details.get("foodNutrients", []):
+            nutrient_name = nutrient.get("nutrientName")
+            # The key for nutrient name is different in the search response
             if nutrient_name in nutrient_map:
                 key = nutrient_map[nutrient_name]
-                nutrients[key] = nutrient.get("amount", 0.0)
+                nutrients[key] = nutrient.get("value", 0.0)
 
         return nutrients
 
     except httpx.HTTPStatusError as e:
         print(f"HTTP error occurred: {e}")
-        return {
-            "calories": None,
-            "protein": None,
-            "carbohydrates": None,
-            "fat": None,
-            "sugar": None,
-            "sodium": None,
-        }
+        return _create_default_nutrients()
     except Exception as e:
         print(f"An error occurred: {e}")
-        return {
-            "calories": None,
-            "protein": None,
-            "carbohydrates": None,
-            "fat": None,
-            "sugar": None,
-            "sodium": None,
-        }
+        return _create_default_nutrients()
 
 
 async def get_recommendations(condition: str) -> FoodRecommendationResponse:
