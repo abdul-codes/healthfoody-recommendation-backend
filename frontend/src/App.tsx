@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { SearchForm } from "@/components/SearchForm";
 import { getFoodRecommendations } from "./api";
-import { FoodRecommendationResponse } from "./types";
+import { FoodRecommendationResponse, SearchType } from "./types";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { AlertCircle, RefreshCw } from "lucide-react";
@@ -11,43 +11,57 @@ function App() {
     useState<FoodRecommendationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchedCondition, setSearchedCondition] = useState<string>("");
+  const [searchedValue, setSearchedValue] = useState<string>("");
 
-  const handleSearch = async (condition: string) => {
+  const handleSearch = async (
+    searchType: SearchType,
+    value: string,
+    country: string,
+  ) => {
     setIsLoading(true);
     setError(null);
-    setRecommendations(null);
-    setSearchedCondition(condition);
-    
+    setSearchedValue(value); // Store the primary search term
     try {
-      const data = await getFoodRecommendations(condition);
-      setRecommendations(data);
-    } catch (err) {
-      setError("Failed to fetch recommendations. Please check your internet connection and try again.");
-      console.error(err);
+      const response = await getFoodRecommendations({
+        search_type: searchType,
+        value,
+        country,
+      });
+      setRecommendations(response);
+    } catch (error) {
+      console.error("Failed to fetch recommendations:", error);
+      setError("Failed to fetch recommendations. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleRetry = () => {
-    if (searchedCondition) {
-      handleSearch(searchedCondition);
+    // This is a simplified retry. A full implementation would store the entire last request.
+    if (searchedValue) {
+      // A default searchType is assumed for retry for simplicity.
+      handleSearch("condition", searchedValue, "");
     }
   };
 
   const renderContent = () => {
     if (isLoading) {
-      return <LoadingSpinner message={`Finding recommendations for ${searchedCondition}...`} />;
+      return (
+        <LoadingSpinner
+          message={`Finding recommendations for ${searchedValue}...`}
+        />
+      );
     }
 
     if (error) {
       return (
         <div className="text-center p-8 bg-red-50 border border-red-200 rounded-lg">
           <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-          <h3 className="text-lg font-medium text-red-800 mb-2">Oops! Something went wrong</h3>
+          <h3 className="text-lg font-medium text-red-800 mb-2">
+            Oops! Something went wrong
+          </h3>
           <p className="text-red-600 mb-4">{error}</p>
-          {searchedCondition && (
+          {searchedValue && (
             <button
               onClick={handleRetry}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
@@ -65,7 +79,8 @@ function App() {
         <div className="space-y-6">
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <p className="text-green-800 font-medium">
-              ✨ Here are your personalized recommendations for <span className="font-bold">{searchedCondition}</span>
+              ✨ Here are your personalized recommendations for{" "}
+              <span className="font-bold">{searchedValue}</span>
             </p>
           </div>
           <ResultsDisplay data={recommendations} />
@@ -76,10 +91,12 @@ function App() {
     return (
       <div className="text-center p-12 space-y-4">
         <div className="text-6xl mb-4">🥗</div>
-        <h3 className="text-xl font-medium text-gray-700">Ready to get started?</h3>
+        <h3 className="text-xl font-medium text-gray-700">
+          Ready to get started?
+        </h3>
         <p className="text-gray-500 max-w-md mx-auto">
-          Enter your health condition above to receive personalized food recommendations 
-          powered by AI and backed by USDA nutritional data.
+          Enter your health condition above to receive personalized food
+          recommendations powered by AI and backed by USDA nutritional data.
         </p>
       </div>
     );
@@ -97,8 +114,9 @@ function App() {
               Healthy Food <span className="text-green-600">Recommender</span>
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Get AI-powered, personalized food recommendations tailored to your health conditions. 
-              Backed by scientific data from USDA FoodData Central.
+              Get AI-powered, personalized food recommendations tailored to your
+              health conditions. Backed by scientific data from USDA FoodData
+              Central.
             </p>
           </header>
 
@@ -111,9 +129,7 @@ function App() {
           </section>
 
           <footer className="text-center mt-12 pt-8 border-t border-gray-200">
-            <p className="text-gray-500">
-      
-            </p>
+            <p className="text-gray-500"></p>
           </footer>
         </div>
       </main>

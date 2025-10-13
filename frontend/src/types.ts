@@ -1,3 +1,11 @@
+export type SearchType = "condition" | "goal" | "country";
+
+export interface RecommendationRequest {
+  search_type: SearchType;
+  value: string;
+  country?: string;
+}
+
 export interface FoodItem {
   name: string;
   reason: string;

@@ -3,7 +3,13 @@ from google import genai
 import httpx
 import json
 import asyncio
-from app.models import FoodRecommendationResponse, FoodItem, DietaryPrinciple
+from app.models import (
+    FoodRecommendationResponse,
+    FoodItem,
+    DietaryPrinciple,
+    RecommendationRequest,
+    SearchType,
+)
 import re
 from app.config import USDA_API_KEY, GEMINI_API_KEY
 from app.types import GeminiResponse, NutrientData
@@ -25,14 +31,36 @@ def clean_json_response(text: str) -> str:
 
 
 @alru_cache(maxsize=128)
-async def get_gemini_recommendations(condition: str) -> GeminiResponse:
+async def get_gemini_recommendations(
+    search_type: SearchType, value: str, country: str | None
+) -> GeminiResponse:
     """
-    Queries the Gemini API asynchronously for food recommendations.
-    Results are cached to avoid repeated API calls for the same condition.
+    Queries the Gemini API asynchronously for food recommendations based on the search parameters.
+    Results are cached to avoid repeated API calls for the same query.
     """
-    prompt = f"""
-    As a nutritionist, for a person with '{condition}', provide a list of 4 recommended foods and 4 foods to strictly avoid.
-    For each food, give a brief reason. Also, provide 3 key dietary principles for this condition, with a brief explanation for each.
+    # Dynamically build the prompt based on the request
+    base_prompt = "As a nutritionist,"
+
+    if search_type == SearchType.GOAL:
+        prompt_core = f" for a person whose goal is '{value}',"
+    elif search_type == SearchType.COUNTRY:
+        prompt_core = (
+            f" list healthy foods and foods to avoid that are common in '{value}'."
+        )
+    else:  # Default to CONDITION
+        prompt_core = f" for a person with '{value}',"
+
+    # Add the country constraint if provided
+    if country:
+        country_constraint = (
+            f" The recommendations should be foods commonly found in '{country}'."
+        )
+    else:
+        country_constraint = ""
+    # Combine the parts into a full prompt
+    full_prompt = f"""
+    {base_prompt}{prompt_core} provide a list of 4 recommended foods and 4 foods to strictly avoid.
+    For each food, give a brief reason. Also, provide 3 key dietary principles relevant to the query.{country_constraint}
     Output in the following JSON format:
     {{
       "recommended_foods": [
@@ -49,12 +77,13 @@ async def get_gemini_recommendations(condition: str) -> GeminiResponse:
       ]
     }}
     """
+
     try:
         client = (
             genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else genai.Client()
         )
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
+            model="gemini-2.5-flash", contents=full_prompt
         )
         if not response.text:
             return {
@@ -144,12 +173,16 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
         return _create_default_nutrients()
 
 
-async def get_recommendations(condition: str) -> FoodRecommendationResponse:
+async def get_recommendations(
+    request: RecommendationRequest,
+) -> FoodRecommendationResponse:
     """
     Orchestrates the process of getting food recommendations asynchronously with parallel processing.
     """
     # Get Gemini recommendations first
-    gemini_data = await get_gemini_recommendations(condition)
+    gemini_data = await get_gemini_recommendations(
+        request.search_type, request.value, request.country
+    )
 
     # Collect all food names for parallel nutrition API calls
     food_names = []

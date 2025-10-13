@@ -1,8 +1,18 @@
 from pydantic import BaseModel
+from enum import Enum
+from typing import Optional
 
 
-class HealthConditionRequest(BaseModel):
-    condition: str
+class SearchType(str, Enum):
+    CONDITION = "condition"
+    GOAL = "goal"
+    COUNTRY = "country"
+
+
+class RecommendationRequest(BaseModel):
+    search_type: SearchType
+    value: str
+    country: Optional[str] = None
 
 
 class FoodItem(BaseModel):

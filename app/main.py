@@ -1,11 +1,16 @@
 from fastapi import FastAPI, HTTPException
-from app.models import HealthConditionRequest, FoodRecommendationResponse
+from app.models import RecommendationRequest, FoodRecommendationResponse
 from app.services import get_recommendations
 from dotenv import load_dotenv
 import os
+import logging
 from fastapi.middleware.cors import CORSMiddleware
 
-load_dotenv() 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 
 app = FastAPI(
@@ -13,10 +18,13 @@ app = FastAPI(
     description="An AI-powered API to recommend healthy foods for various health conditions.",
     version="1.0.0",
 )
- # Add CORS middleware to allow frontend requests
+# Add CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React/Vite dev servers
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],  # React/Vite dev servers
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,17 +37,24 @@ def read_root():
 
 
 @app.post("/recommendations", response_model=FoodRecommendationResponse)
-async def get_food_recommendations(request: HealthConditionRequest):
+async def get_food_recommendations(request: RecommendationRequest):
     """
-    Get food recommendations for a given health condition.
+    Get food recommendations based on a health condition, goal, or country.
     """
-    if not request.condition:
-        raise HTTPException(status_code=400, detail="Health condition cannot be empty.")
+    logger.info(f"Received recommendation request: {request.model_dump_json()}")
+
+    if not request.value:
+        raise HTTPException(
+            status_code=400, detail="The 'value' field cannot be empty."
+        )
 
     try:
-        recommendations = await get_recommendations(request.condition)
+        recommendations = await get_recommendations(request)
         return recommendations
     except Exception as e:
+        logger.error(
+            "An error occurred in the recommendations endpoint:", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
