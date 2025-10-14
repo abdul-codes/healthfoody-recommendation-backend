@@ -15,6 +15,9 @@ from app.config import USDA_API_KEY, GEMINI_API_KEY
 from app.types import GeminiResponse, NutrientData
 from collections.abc import Mapping
 from async_lru import alru_cache
+from app.db import AsyncSessionLocal, NutritionCache
+from sqlalchemy.exc import NoResultFound
+from datetime import datetime, timedelta
 
 HTTP_CLIENT = httpx.AsyncClient(
     timeout=httpx.Timeout(15.0),
@@ -125,13 +128,27 @@ def _extract_nutrient_value(nutrient_data: dict[str, Any]) -> float | None:
         return None
 
 
-@alru_cache(maxsize=256)
+NUTRITION_CACHE_TTL_DAYS = 30  # Re-fetch every 30 days
+
 async def get_usda_nutrition_data(food_name: str) -> NutrientData:
-    """
-    Queries the USDA FoodData Central API asynchronously for nutritional data.
-    This is optimized to a one-step process by parsing data from the search result.
-    Results are cached to avoid repeated API calls for the same food.
-    """
+    """Check cache first, then USDA."""
+    # --- Check the cache (synchronously, can be made async) --- #
+    db = AsyncSessionLocal()
+    try:
+        cached = db.query(NutritionCache).filter_by(food_name=food_name).first()
+        if cached and cached.last_updated > datetime.utcnow() - timedelta(days=NUTRITION_CACHE_TTL_DAYS):
+            return {
+                "calories": cached.calories,
+                "protein": cached.protein,
+                "carbohydrates": cached.carbohydrates,
+                "fat": cached.fat,
+                "sugar": cached.sugar,
+                "sodium": cached.sodium
+            }
+    finally:
+        db.close()
+    
+    # --- If not in cache or expired, call USDA API (do as before) --- #
     search_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
     search_params = {"query": food_name, "api_key": USDA_API_KEY, "pageSize": 1}
 
@@ -163,11 +180,29 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
                 key = nutrient_map[nutrient_name]
                 nutrients[key] = nutrient.get("value", 0.0)
 
+        # --- Save in cache --- #
+        db = AsyncSessionLocal()
+        try:
+            new_cache = NutritionCache(
+                food_name=food_name,
+                calories=nutrients.get("calories"),
+                protein=nutrients.get("protein"),
+                carbohydrates=nutrients.get("carbohydrates"),
+                fat=nutrients.get("fat"),
+                sugar=nutrients.get("sugar"),
+                sodium=nutrients.get("sodium"),
+                last_updated=datetime.utcnow()
+            )
+            db.merge(new_cache)
+            db.commit()
+        finally:
+            db.close()
+
         return nutrients
 
     except httpx.HTTPStatusError as e:
         print(f"HTTP error occurred: {e}")
-        return _create_default_nutrients()
+        raise  # Re-raise the exception to be handled by the caller
     except Exception as e:
         print(f"An error occurred: {e}")
         return _create_default_nutrients()

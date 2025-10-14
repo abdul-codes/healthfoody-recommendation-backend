@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from app.models import RecommendationRequest, FoodRecommendationResponse
 from app.services import get_recommendations
@@ -5,6 +6,7 @@ from dotenv import load_dotenv
 import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
+from app.db import init_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -12,12 +14,18 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
 
 app = FastAPI(
     title="Healthy Food Recommender API",
     description="An AI-powered API to recommend healthy foods for various health conditions.",
     version="1.0.0",
+    lifespan=lifespan,
 )
+
 # Add CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,

@@ -4,7 +4,7 @@ import { getFoodRecommendations } from "./api";
 import { FoodRecommendationResponse, SearchType } from "./types";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { LoadingSpinner } from "./components/LoadingSpinner";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw, Leaf, Sparkles } from "lucide-react";
 
 function App() {
   const [recommendations, setRecommendations] =
@@ -13,6 +13,12 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [searchedValue, setSearchedValue] = useState<string>("");
 
+  const [lastRequest, setLastRequest] = useState<{
+    searchType: SearchType;
+    value: string;
+    country: string;
+  } | null>(null);
+
   const handleSearch = async (
     searchType: SearchType,
     value: string,
@@ -20,7 +26,9 @@ function App() {
   ) => {
     setIsLoading(true);
     setError(null);
-    setSearchedValue(value); // Store the primary search term
+    setSearchedValue(value);
+    setLastRequest({ searchType, value, country });
+
     try {
       const response = await getFoodRecommendations({
         search_type: searchType,
@@ -28,20 +36,30 @@ function App() {
         country,
       });
       setRecommendations(response);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch recommendations:", error);
-      setError("Failed to fetch recommendations. Please try again.");
+      if (error.response && error.response.data && error.response.data.detail) {
+        setError(`An error occurred: ${error.response.data.detail}`);
+      } else {
+        setError("An unexpected error occurred. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleRetry = () => {
-    // This is a simplified retry. A full implementation would store the entire last request.
-    if (searchedValue) {
-      // A default searchType is assumed for retry for simplicity.
-      handleSearch("condition", searchedValue, "");
+    if (lastRequest) {
+      handleSearch(
+        lastRequest.searchType,
+        lastRequest.value,
+        lastRequest.country,
+      );
     }
+  };
+
+  const handleReload = () => {
+    window.location.reload();
   };
 
   const renderContent = () => {
@@ -61,7 +79,7 @@ function App() {
             Oops! Something went wrong
           </h3>
           <p className="text-red-600 mb-4">{error}</p>
-          {searchedValue && (
+          <div className="flex justify-center gap-4">
             <button
               onClick={handleRetry}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
@@ -69,17 +87,24 @@ function App() {
               <RefreshCw className="h-4 w-4" />
               Try Again
             </button>
-          )}
+            <button
+              onClick={handleReload}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Reload Page
+            </button>
+          </div>
         </div>
       );
     }
 
     if (recommendations) {
       return (
-        <div className="space-y-6">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <p className="text-green-800 font-medium">
-              ✨ Here are your personalized recommendations for{" "}
+        <div className="space-y-8">
+          <div className="flex items-start gap-3 p-4 bg-green-50 border-l-4 border-green-500 rounded-r-lg">
+            <Sparkles className="w-5 h-5 text-green-700 mt-0.5 flex-shrink-0" />
+            <p className="font-medium text-green-900">
+              Here are your personalized recommendations for{" "}
               <span className="font-bold">{searchedValue}</span>
             </p>
           </div>
@@ -103,24 +128,22 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
-      <main className="container mx-auto px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="min-h-screen bg-gray-50">
+      <main className="container mx-auto px-4 py-8 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
-          <header className="text-center mb-12">
-            <div className="mb-4">
-              <span className="text-5xl mb-4 block">🍎</span>
+          <header className="text-center mb-10">
+            <div className="inline-block p-3 bg-green-100 rounded-full mb-4">
+              <Leaf className="w-10 h-10 text-green-700" />
             </div>
-            <h1 className="text-4xl sm:text-5xl font-bold text-gray-800 mb-4">
-              Healthy Food <span className="text-green-600">Recommender</span>
+            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-3">
+              Eat Right, Live Well
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Get AI-powered, personalized food recommendations tailored to your
-              health conditions. Backed by scientific data from USDA FoodData
-              Central.
+              AI-powered food recommendations tailored to your health needs.
             </p>
           </header>
 
-          <section className="bg-white p-6 sm:p-8 rounded-xl shadow-lg border border-gray-100 mb-8">
+          <section className="bg-white p-6 sm:p-8 rounded-xl border border-gray-200 mb-8">
             <SearchForm onSubmit={handleSearch} isLoading={isLoading} />
           </section>
 
