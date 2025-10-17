@@ -18,7 +18,7 @@ from async_lru import alru_cache
 from app.db import AsyncSessionLocal, NutritionCache
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.future import select
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 HTTP_CLIENT = httpx.AsyncClient(
     timeout=httpx.Timeout(15.0),
@@ -147,7 +147,10 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
             if (
                 cached is not None
                 and cached.last_updated
-                > datetime.now(timezone.utc) - timedelta(days=NUTRITION_CACHE_TTL_DAYS) # Fix: Use timezone.utc and now()
+                > datetime.now(timezone.utc)
+                - timedelta(
+                    days=NUTRITION_CACHE_TTL_DAYS
+                )  # Fix: Use timezone.utc and now()
             ):
                 # Fix: Explicitly cast attribute values to float | None for NutrientData return type
                 return {
@@ -183,7 +186,9 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
         # The search result itself contains the nutrient data. No need for a second call.
         # Fix: Cast to provide a more specific type than 'Any' for food_details
         food_details = cast(dict[str, Any], search_data["foods"][0])
-        nutrients_result = _create_default_nutrients() # Renamed to avoid conflict if 'nutrients' was a general concept
+        nutrients_result = (
+            _create_default_nutrients()
+        )  # Renamed to avoid conflict if 'nutrients' was a general concept
 
         nutrient_map: Mapping[str, str] = {
             "Energy": "calories",
@@ -221,7 +226,9 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
                     existing.fat = nutrients_result.get("fat")
                     existing.sugar = nutrients_result.get("sugar")
                     existing.sodium = nutrients_result.get("sodium")
-                    existing.last_updated = datetime.now(timezone.utc) # Fix: Use timezone.utc and now()
+                    existing.last_updated = datetime.now(
+                        timezone.utc
+                    )  # Fix: Use timezone.utc and now()
                 else:
                     # Create new record
                     new_cache = NutritionCache(
@@ -232,7 +239,9 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
                         fat=nutrients_result.get("fat"),
                         sugar=nutrients_result.get("sugar"),
                         sodium=nutrients_result.get("sodium"),
-                        last_updated=datetime.now(timezone.utc), # Fix: Use timezone.utc and now()
+                        last_updated=datetime.now(
+                            timezone.utc
+                        ),  # Fix: Use timezone.utc and now()
                     )
                     db.add(new_cache)
 
