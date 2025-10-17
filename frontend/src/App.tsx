@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { SearchForm } from "@/components/SearchForm";
 import { getFoodRecommendations } from "./api";
 import { FoodRecommendationResponse, SearchType } from "./types";
@@ -36,13 +37,15 @@ function App() {
         country,
       });
       setRecommendations(response);
-    } catch (error) {
-      console.error("Failed to fetch recommendations:", error);
-      if (error.response && error.response.data && error.response.data.detail) {
-        setError(`An error occurred: ${error.response.data.detail}`);
-      } else {
-        setError("An unexpected error occurred. Please try again.");
+    } catch (err) {
+      console.error("Failed to fetch recommendations:", err);
+      let errorMessage = "An unexpected error occurred. Please try again.";
+      if (axios.isAxiosError(err) && err.response?.data?.detail) {
+        errorMessage = `An error occurred: ${err.response.data.detail}`;
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
       }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -121,7 +124,7 @@ function App() {
         </h3>
         <p className="text-gray-500 max-w-md mx-auto">
           Enter your health condition above to receive personalized food
-          recommendations powered by AI and backed by USDA nutritional data.
+          recommendations powered by AI.
         </p>
       </div>
     );

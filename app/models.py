@@ -18,12 +18,6 @@ class RecommendationRequest(BaseModel):
 class FoodItem(BaseModel):
     name: str
     reason: str
-    calories: float | None = None
-    protein: float | None = None
-    carbohydrates: float | None = None
-    fat: float | None = None
-    sugar: float | None = None
-    sodium: float | None = None
 
 
 class DietaryPrinciple(BaseModel):

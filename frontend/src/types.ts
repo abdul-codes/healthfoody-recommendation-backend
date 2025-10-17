@@ -9,12 +9,6 @@ export interface RecommendationRequest {
 export interface FoodItem {
   name: string;
   reason: string;
-  calories: number | null;
-  protein: number | null;
-  carbohydrates: number | null;
-  fat: number | null;
-  sugar: number | null;
-  sodium: number | null;
 }
 
 export interface DietaryPrinciple {
