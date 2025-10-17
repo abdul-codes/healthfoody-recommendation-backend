@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from async_lru import alru_cache
 from app.db import AsyncSessionLocal, NutritionCache
 from sqlalchemy.exc import NoResultFound
+from sqlalchemy.future import select
 from datetime import datetime, timedelta
 
 HTTP_CLIENT = httpx.AsyncClient(
@@ -130,39 +131,59 @@ def _extract_nutrient_value(nutrient_data: dict[str, Any]) -> float | None:
 
 NUTRITION_CACHE_TTL_DAYS = 30  # Re-fetch every 30 days
 
+
 async def get_usda_nutrition_data(food_name: str) -> NutrientData:
-    """Check cache first, then USDA."""
-    # --- Check the cache (synchronously, can be made async) --- #
-    db = AsyncSessionLocal()
-    try:
-        cached = db.query(NutritionCache).filter_by(food_name=food_name).first()
-        if cached and cached.last_updated > datetime.utcnow() - timedelta(days=NUTRITION_CACHE_TTL_DAYS):
-            return {
-                "calories": cached.calories,
-                "protein": cached.protein,
-                "carbohydrates": cached.carbohydrates,
-                "fat": cached.fat,
-                "sugar": cached.sugar,
-                "sodium": cached.sodium
-            }
-    finally:
-        db.close()
-    
-    # --- If not in cache or expired, call USDA API (do as before) --- #
+    """Check cache first, then USDA API with proper async operations."""
+
+    # Check cache first
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(NutritionCache).where(NutritionCache.food_name == food_name)
+            )
+            # Explicitly type cached as a NutritionCache instance to aid type checking
+            cached: NutritionCache | None = result.scalar_one_or_none()
+
+            if (
+                cached is not None
+                and cached.last_updated
+                > datetime.now(timezone.utc) - timedelta(days=NUTRITION_CACHE_TTL_DAYS) # Fix: Use timezone.utc and now()
+            ):
+                # Fix: Explicitly cast attribute values to float | None for NutrientData return type
+                return {
+                    "calories": cast(float | None, cached.calories),
+                    "protein": cast(float | None, cached.protein),
+                    "carbohydrates": cast(float | None, cached.carbohydrates),
+                    "fat": cast(float | None, cached.fat),
+                    "sugar": cast(float | None, cached.sugar),
+                    "sodium": cast(float | None, cached.sodium),
+                }
+        except Exception as e:
+            print(f"Cache read error: {e}")
+
+    # If not in cache or expired, call USDA API
     search_url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-    search_params = {"query": food_name, "api_key": USDA_API_KEY, "pageSize": 1}
+    search_params = {
+        "query": food_name,
+        "api_key": USDA_API_KEY,
+        "pageSize": 1,
+        "dataType": "Foundation,SR Legacy",  # Prioritize high-quality data
+    }
 
     try:
         search_response = await HTTP_CLIENT.get(search_url, params=search_params)
-        search_response.raise_for_status()
-        search_data = search_response.json()
+        # Fix: Assign to '_' to indicate the return value is intentionally not used
+        _ = search_response.raise_for_status()
+        # Fix: Cast to provide a more specific type than 'Any' for search_data
+        search_data = cast(dict[str, Any], search_response.json())
 
         if not search_data.get("foods"):
             return _create_default_nutrients()
 
         # The search result itself contains the nutrient data. No need for a second call.
-        food_details = search_data["foods"][0]
-        nutrients = _create_default_nutrients()
+        # Fix: Cast to provide a more specific type than 'Any' for food_details
+        food_details = cast(dict[str, Any], search_data["foods"][0])
+        nutrients_result = _create_default_nutrients() # Renamed to avoid conflict if 'nutrients' was a general concept
 
         nutrient_map: Mapping[str, str] = {
             "Energy": "calories",
@@ -173,36 +194,58 @@ async def get_usda_nutrition_data(food_name: str) -> NutrientData:
             "Sodium, Na": "sodium",
         }
 
-        for nutrient in food_details.get("foodNutrients", []):
-            nutrient_name = nutrient.get("nutrientName")
-            # The key for nutrient name is different in the search response
+        # Fix: Cast nutrient_item_raw and use _extract_nutrient_value for safe parsing
+        for nutrient_item_raw in food_details.get("foodNutrients", []):
+            nutrient_item = cast(dict[str, Any], nutrient_item_raw)
+            nutrient_name = nutrient_item.get("nutrientName")
             if nutrient_name in nutrient_map:
                 key = nutrient_map[nutrient_name]
-                nutrients[key] = nutrient.get("value", 0.0)
+                nutrients_result[key] = _extract_nutrient_value(nutrient_item)
 
-        # --- Save in cache --- #
-        db = AsyncSessionLocal()
-        try:
-            new_cache = NutritionCache(
-                food_name=food_name,
-                calories=nutrients.get("calories"),
-                protein=nutrients.get("protein"),
-                carbohydrates=nutrients.get("carbohydrates"),
-                fat=nutrients.get("fat"),
-                sugar=nutrients.get("sugar"),
-                sodium=nutrients.get("sodium"),
-                last_updated=datetime.utcnow()
-            )
-            db.merge(new_cache)
-            db.commit()
-        finally:
-            db.close()
+        # Save to cache with proper async operations
+        async with AsyncSessionLocal() as db:
+            try:
+                # Check if record exists and update, or create new
+                result = await db.execute(
+                    select(NutritionCache).where(NutritionCache.food_name == food_name)
+                )
+                # Explicitly type existing as a NutritionCache instance to aid type checking
+                existing: NutritionCache | None = result.scalar_one_or_none()
 
-        return nutrients
+                if existing:
+                    # Update existing record
+                    # Assuming NutritionCache attributes are correctly typed (e.g., Mapped[Optional[float]])
+                    existing.calories = nutrients_result.get("calories")
+                    existing.protein = nutrients_result.get("protein")
+                    existing.carbohydrates = nutrients_result.get("carbohydrates")
+                    existing.fat = nutrients_result.get("fat")
+                    existing.sugar = nutrients_result.get("sugar")
+                    existing.sodium = nutrients_result.get("sodium")
+                    existing.last_updated = datetime.now(timezone.utc) # Fix: Use timezone.utc and now()
+                else:
+                    # Create new record
+                    new_cache = NutritionCache(
+                        food_name=food_name,
+                        calories=nutrients_result.get("calories"),
+                        protein=nutrients_result.get("protein"),
+                        carbohydrates=nutrients_result.get("carbohydrates"),
+                        fat=nutrients_result.get("fat"),
+                        sugar=nutrients_result.get("sugar"),
+                        sodium=nutrients_result.get("sodium"),
+                        last_updated=datetime.now(timezone.utc), # Fix: Use timezone.utc and now()
+                    )
+                    db.add(new_cache)
+
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                print(f"Cache save error: {e}")
+
+        return nutrients_result
 
     except httpx.HTTPStatusError as e:
         print(f"HTTP error occurred: {e}")
-        raise  # Re-raise the exception to be handled by the caller
+        return _create_default_nutrients()
     except Exception as e:
         print(f"An error occurred: {e}")
         return _create_default_nutrients()

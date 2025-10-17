@@ -1,16 +1,15 @@
-from sqlalchemy import (
-    Column, String, Float, DateTime, create_engine
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.future import select
+from sqlalchemy import Column, String, Float, DateTime
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
 from datetime import datetime
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nutrition_cache.db")
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
+
 
 class NutritionCache(Base):
     __tablename__ = "nutrition_cache"
@@ -23,6 +22,20 @@ class NutritionCache(Base):
     sodium = Column(Float, nullable=True)
     last_updated = Column(DateTime, default=datetime.utcnow)
 
-# Create engine/session
-engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Create async engine and session factory
+engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+AsyncSessionLocal = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
+
+
+async def init_db():
+    """Initialize the database tables."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def close_db():
+    """Close database connections."""
+    await engine.dispose()

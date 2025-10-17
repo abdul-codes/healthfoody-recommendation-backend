@@ -36,7 +36,7 @@ function App() {
         country,
       });
       setRecommendations(response);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to fetch recommendations:", error);
       if (error.response && error.response.data && error.response.data.detail) {
         setError(`An error occurred: ${error.response.data.detail}`);
