@@ -46,9 +46,7 @@ def read_root():
 
 @app.post("/recommendations", response_model=FoodRecommendationResponse)
 async def get_food_recommendations(request: RecommendationRequest):
-    """
-    Get food recommendations based on a health condition, goal, or country.
-    """
+
     logger.info(f"Received recommendation request: {request.model_dump_json()}")
 
     if not request.value:

@@ -1,5 +1,7 @@
+from sqlalchemy import Column, String, JSON, DateTime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from datetime import datetime
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nutrition_cache.db")
@@ -7,6 +9,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nutrition_cache.
 
 class Base(DeclarativeBase):
     pass
+
+
+class NutritionCache(Base):
+    __tablename__ = "nutrition_cache"
+    request_hash = Column(String, primary_key=True, index=True)
+    response = Column(JSON)
+    last_updated = Column(DateTime, default=datetime.utcnow)
 
 
 # Create async engine and session factory
@@ -17,13 +26,9 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def init_db():
-    """Initialize the database tables."""
     async with engine.begin() as conn:
-        # Since there are no tables, this will do nothing, but it's good practice
-        # to have an init_db function in case you add models later.
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db():
-    """Close database connections."""
     await engine.dispose()
